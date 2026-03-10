@@ -1,3 +1,7 @@
 audio
 env
 examples
+musdb18
+TFRecords
+__pycache__
+test.py
