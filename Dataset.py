@@ -2,6 +2,7 @@ import os
 import tensorflow as tf
 import numpy as np
 from Utils import *
+from pprint import pprint
 
 def _bytes_feature(value):
   if isinstance(value, type(tf.constant(0))):
@@ -39,18 +40,25 @@ def load_data_path(dataset_path):
         subsets.append(samples)
     return subsets
 
-def save_data(type, paths, writer):
-    data_waveform, rate_of_sample = audio_to_waveform(paths)
-    data_waveform = downmix_to_mono(data_waveform)
-    data_waveform = trim_audio(data_waveform)
-    data_waveform, rate_of_sample = resample(data_waveform, rate_of_sample)
+def save_data(data, writer):
+    tensors = {}
+    for key, path in data.items():
+        data_waveform, rate_of_sample = audio_to_waveform(path)
+        data_waveform = downmix_to_mono(data_waveform)
+        data_waveform = trim_audio(data_waveform)
+        data_waveform, rate_of_sample = resample(data_waveform, rate_of_sample)
    
-    data_waveform = data_waveform.to(torch.float32)
-    data_waveform = tf.io.serialize_tensor(data_waveform)
+        data_waveform = data_waveform.to(torch.float32)
+        data_waveform = tf.io.serialize_tensor(data_waveform)
+        tensors[key] = tf.io.serialize_tensor(data_waveform).numpy()
     features = {
-        "type": _int64_feature(type),
-        "waveform": _bytes_feature(data_waveform.numpy()),
+        "mix": _bytes_feature(tensors[0]),
+        "vocals": _bytes_feature(tensors[1]),
+        "bass": _bytes_feature(tensors[2]),
+        "drums": _bytes_feature(tensors[3]),
+        "others": _bytes_feature(tensors[4]),
     }
+    
     row = tf.train.Example(features=tf.train.Features(feature=features))
     writer.write(row.SerializeToString())
 
@@ -66,19 +74,14 @@ def Get_dataset(dataset_path):
         PATH_DFRECORDS = f"./TFRecords/{type}"
         if not os.path.exists(PATH_DFRECORDS):
             os.makedirs(PATH_DFRECORDS)
-        quant_paths = len(tf_type)
-        im_per_shard = 3
-        num_shards = int(quant_paths/im_per_shard) + 1
-        
-        
-        for shard in range(num_shards):
-            output_filename = os.path.join(PATH_DFRECORDS,'{}_{:03d}-of-{:03d}.tfrecord'.format("audios_sources", shard+1, num_shards))
-            data_shard = tf_type[shard*im_per_shard:(shard+1)*im_per_shard]
+                    
+        for shard in range(len(tf_type)):
+            output_filename = os.path.join(PATH_DFRECORDS,'{}_{:03d}-of-{:03d}.tfrecord'.format("audios_sources", shard+1, len(tf_type)))
+            # data_shard = tf_type[shard*im_per_shard:(shard+1)*im_per_shard]
+            data_shard = tf_type[shard:shard+1]
             for data in data_shard:
                 with tf.io.TFRecordWriter(output_filename) as writer:
-                    for key, value in data.items():
-                        save_data(key, value, writer)
-        
+                        save_data(data, writer)
     
     
     
