@@ -3,6 +3,9 @@ import tensorflow as tf
 import numpy as np
 from Utils import *
 from pprint import pprint
+from WaveToSpec import TransformSpec
+
+transform_spec = TransformSpec()
 
 def _bytes_feature(value):
   if isinstance(value, type(tf.constant(0))):
@@ -10,13 +13,6 @@ def _bytes_feature(value):
   elif isinstance(value, str):
     value = value.encode("utf-8")
   return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
-
-def _int64_feature(value):
-  return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
-
-def _float_feature(value):
-  """Returns a float_list from a float / double."""
-  return tf.train.Feature(float_list=tf.train.FloatList(value=value))
 
 num_shards = 3
 
@@ -47,10 +43,9 @@ def save_data(data, writer):
         data_waveform = downmix_to_mono(data_waveform)
         data_waveform = trim_audio(data_waveform)
         data_waveform, rate_of_sample = resample(data_waveform, rate_of_sample)
-   
-        data_waveform = data_waveform.to(torch.float32)
-        data_waveform = tf.io.serialize_tensor(data_waveform)
-        tensors[key] = tf.io.serialize_tensor(data_waveform).numpy()
+        data_spectogram = transform_spec.transform_in_spectogram(data_waveform)
+        data_spectogram = data_spectogram.to(torch.float16)
+        tensors[key] = tf.io.serialize_tensor(data_spectogram.numpy()).numpy()
     features = {
         "mix": _bytes_feature(tensors[0]),
         "vocals": _bytes_feature(tensors[1]),
