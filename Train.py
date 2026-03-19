@@ -1,0 +1,73 @@
+import tensorflow as tf
+from Model import UNet
+from Utils import \
+                DEVICE, \
+                NUM_EPOCHS, \
+                avaliation_model, \
+                train_model, \
+                save_checkpoint, \
+                check_accuracy
+from tqdm import tqdm
+
+# https://apxml.com/courses/getting-started-with-tensorflow/chapter-5-data-input-pipelines-tfdata/working-tfrecord-files
+# https://www.tensorflow.org/api_docs/python/tf/data/experimental/parallel_interleave
+
+def parse_data(row_data):
+    feature_description = {
+        'mix': tf.io.FixedLenFeature([], tf.string),
+        'vocals': tf.io.FixedLenFeature([], tf.string),
+        'bass': tf.io.FixedLenFeature([], tf.string),
+        'drums': tf.io.FixedLenFeature([], tf.string),
+        'others': tf.io.FixedLenFeature([], tf.string),
+        'original_phase': tf.io.FixedLenFeature([], tf.string),
+    }
+    parsed = tf.io.parse_single_example(row_data, feature_description)
+    mix_deserialized = tf.cast(tf.io.parse_tensor(parsed["mix"], out_type=tf.float16), tf.float32)
+    vocals_deserialized = tf.cast(tf.io.parse_tensor(parsed["vocals"], out_type=tf.float16), tf.float32)
+    bass_deserialized = tf.cast(tf.io.parse_tensor(parsed["bass"], out_type=tf.float16), tf.float32)
+    drums_deserialized = tf.cast(tf.io.parse_tensor(parsed["drums"], out_type=tf.float16), tf.float32)
+    others_deserialized = tf.cast(tf.io.parse_tensor(parsed["others"], out_type=tf.float16), tf.float32)
+    phase_deserialized = tf.cast(tf.io.parse_tensor(parsed["original_phase"], out_type=tf.float16), tf.float32)
+    
+    return mix_deserialized, vocals_deserialized, bass_deserialized, drums_deserialized, others_deserialized, phase_deserialized
+    
+def split_data(*row_data):
+    X = tf.expand_dims(row_data[0], axis=1)
+    y = tf.stack([row_data[1], row_data[2], row_data[3], row_data[4]], axis=-1)
+    phase = tf.expand_dims(row_data[5], axis=1)
+    return X, y, phase
+
+def get_data(path):
+    ds = tf.data.TFRecordDataset.list_files(path, shuffle=False).interleave(
+        lambda x: tf.data.TFRecordDataset(x),
+        num_parallel_calls=tf.data.AUTOTUNE,
+        cycle_length=tf.data.AUTOTUNE
+    )
+    ds = ds.map(parse_data, num_parallel_calls=tf.data.AUTOTUNE)
+    ds = ds.map(split_data, num_parallel_calls=tf.data.AUTOTUNE)
+    
+    ds = ds.prefetch(buffer_size=tf.data.AUTOTUNE)
+
+    return ds
+
+def train():
+    ds_train, ds_test = get_data("./TFRecords/train/*.tfrecord"), get_data("./TFRecords/test/*.tfrecord")
+    
+    model = UNet(in_channels=1, out_channels=4).to(DEVICE)
+    loss_fn, optimizer = avaliation_model(model)
+    
+    for data in ds_train:
+        print(data)
+    
+    # for epoch in range(NUM_EPOCHS):
+    #     loop = tqdm(ds_train)
+    #     for batch_idx, (data, targets, phase) in enumerate(loop):
+    #         train_model(data, targets, model, loss_fn, optimizer)
+    #         checkpoint = {
+    #             "state_dict": model.state_dict(),
+    #             "optimizer":optimizer.state_dict(),
+    #         }
+    #     save_checkpoint(checkpoint)
+        
+train()
+# https://www.tensorflow.org/tutorials/load_data/tfrecord?hl=pt-br#reading_a_tfrecord_file

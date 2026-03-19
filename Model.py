@@ -11,21 +11,21 @@ class DoubleConv(nn.Module):
         self.conv = nn.Sequential(
             nn.Conv2d(in_channels, out_channels, self.kernel_size, self.stride, self.padding, bias=False),
             nn.BatchNorm2d(out_channels),
-            # nn.ReLU(inplace=True),
-            nn.LeakyReLU(True),
+            nn.ReLU(inplace=True),
+            # nn.LeakyReLU(True),
             nn.Conv2d(out_channels, out_channels, self.kernel_size, self.stride, self.padding, bias=False),
             nn.BatchNorm2d(out_channels),
-            # nn.ReLU(inplace=True),
-            nn.LeakyReLU(True)
+            nn.ReLU(inplace=True),
+            # nn.LeakyReLU(True)
         )
 
     def forward(self, x):
         return self.conv(x)
 
 class UNet(nn.Module):
-    def __init__(self):
+    def __init__(self, in_channels, out_channels):
         super(UNet, self).__init__()
-        self.channels = 2
+        self.channels = in_channels
         self.outs = [16, 32, 64, 128, 256, 512]
         self.ups = nn.ModuleList()
         self.downs = nn.ModuleList()
@@ -54,17 +54,21 @@ class UNet(nn.Module):
             
             #final_conv
             if i+1 == len(self.outs[:-1]):
-                output = 2
-                self.final_conv = nn.Conv2d(out, output, kernel_size=1)
+                # output = 2
+                
+                self.final_conv = nn.Sequential(
+                    nn.Conv2d(out, out_channels, kernel_size=1),
+                    nn.Softplus()
+                )
     
     def forward(self, x):
         skip_connections = []
         
         for down in self.downs:
             x = down(x)
+            print(1)
             skip_connections.append(x)
             x = self.pool(x)
-        
         x = self.bottleneck(x)
         skip_connections = skip_connections[::-1]
         
@@ -79,9 +83,3 @@ class UNet(nn.Module):
             x = self.ups[idx+1](concat_skip)
         
         return self.final_conv(x)
-
-
-x = torch.randn(1, 2, 256, 256)
-model = UNet()
-preds = model(x)
-assert preds.shape == x.shape
