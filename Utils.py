@@ -4,7 +4,7 @@ from torchaudio import functional as AF
 import torchaudio
 import torch.nn as nn
 import torch.optim as optim
-from torchmetrics.audio import SignalDistortionRatio
+from torchmetrics.audio import ScaleInvariantSignalDistortionRatio
 import torchmetrics
 
 LEARNING_RATE = 1e-4
@@ -115,31 +115,38 @@ def train_model(data, targets, model, loss_fn, optimizer):
     # loop.set_postfix(loss=loss.item())
     
 
-def evaluation_model(model, ds_test):
+def evaluation_model(model, ds_test, type, loss, epoch):
     model.eval()
     NUM_CLASSES = 4
     accuracy_metric = torchmetrics.Accuracy(task="multiclass", num_classes=NUM_CLASSES).to(DEVICE)
-    sdr = SignalDistortionRatio()
-    sdr_metrics = []
+    si_sdr = ScaleInvariantSignalDistortionRatio()
+    si_sdr_metrics = []
     transform_spec = TransformSpec()
-    for (features, targets, phase) in ds_test:
-        features = torch.tensor(features.numpy()).to(DEVICE)
-        targets = torch.tensor(targets.numpy()).permute(0, 3, 1, 2).float().to(DEVICE)
-        phase = torch.tensor(phase.numpy()).to(DEVICE)
-        phase = phase.squeeze()  
-        predict = model(features)
-        with torch.no_grad():
-            for ch, data in enumerate(predict[0]):
-                reconstructed_predict = data * torch.exp(1j * phase)
-                reconstructed_targets = targets[0][ch] * torch.exp(1j * phase)
-                waveform_predict = transform_spec.transform_in_waveform(reconstructed_predict)
-                waveform_targets = transform_spec.transform_in_waveform(reconstructed_targets)
-                sdr_metrics.append(sdr(waveform_predict, waveform_targets))
-                print(sdr_metrics)
-                accuracy_metric.update(waveform_predict, waveform_targets)
-    final_val_accuracy = accuracy_metric.compute()
-    print(f"Validation Accuracy: {final_val_accuracy.item():.4f}")
-    print(sdr_metrics)
+    if type == "train":
+        print("epoch: {}/{}, loss: {}".format(epoch+1, NUM_EPOCHS, loss))
+    else:
+        for (features, targets, phase) in ds_test:
+            features = torch.tensor(features.numpy()).to(DEVICE)
+            targets = torch.tensor(targets.numpy()).permute(0, 3, 1, 2).float().to(DEVICE)
+            phase = torch.tensor(phase.numpy()).to(DEVICE)
+            phase = phase.squeeze()  
+            predict = model(features)
+            with torch.no_grad():
+                for ch, data in enumerate(predict[0]):
+                    reconstructed_predict = data * torch.exp(1j * phase)
+                    reconstructed_targets = targets[0][ch] * torch.exp(1j * phase)
+                    waveform_predict = transform_spec.transform_in_waveform(reconstructed_predict)
+                    waveform_targets = transform_spec.transform_in_waveform(reconstructed_targets)
+                    # print("predict mean:", waveform_predict.mean())
+                    # print("predict std:", waveform_predict.std())
+                    # print("predict sum:", waveform_predict.abs().sum())
+                    si_sdr_metrics.append(si_sdr(waveform_predict, waveform_targets))
+                    print(si_sdr_metrics)
+                    accuracy_metric.update(waveform_predict, waveform_targets)
+        final_val_accuracy = accuracy_metric.compute()
+        si_sdr_metrics = sum(si_sdr_metrics) / len(si_sdr_metrics)
+        print(f"Validation Accuracy: {final_val_accuracy.item():.4f}")
+        print(f"Scale-Invariant Signal-to-Distortion Ratio: {si_sdr_metrics}")
             
             
             

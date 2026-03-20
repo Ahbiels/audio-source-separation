@@ -4,7 +4,7 @@ import numpy as np
 from Utils import TransformSpec, \
                     audio_to_waveform, \
                     downmix_to_mono, \
-                    resample, check_accuracy
+                    resample
 import torch
 from pprint import pprint
 
@@ -16,8 +16,6 @@ def _bytes_feature(value):
   elif isinstance(value, str):
     value = value.encode("utf-8")
   return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
-
-num_shards = 3
 
 def load_data_path(dataset_path):
     subsets = []
@@ -43,17 +41,16 @@ def save_data(data, writer):
     tensors = {}
     phase = None
     for index in range(len(data.items())):
-        print(index)
         data_waveform, rate_of_sample = audio_to_waveform(data[index])
         data_waveform = downmix_to_mono(data_waveform)
         data_waveform, rate_of_sample = resample(data_waveform, rate_of_sample)
         if index == 0:
             data_spectogram, phase = transform_spec.transform_in_spectogram(data_waveform)
-            phase = phase.to(torch.float16)
+            phase = phase.to(torch.float32)
             phase = tf.io.serialize_tensor(phase.numpy()).numpy()
         else:
             data_spectogram, _ = transform_spec.transform_in_spectogram(data_waveform)
-        data_spectogram = data_spectogram.to(torch.float16)
+        data_spectogram = data_spectogram.to(torch.float32)
         tensors[index] = tf.io.serialize_tensor(data_spectogram.numpy()).numpy()
     features = {
         "mix": _bytes_feature(tensors[0]),
@@ -80,7 +77,6 @@ def Get_dataset(dataset_path):
         if not os.path.exists(PATH_DFRECORDS):
             os.makedirs(PATH_DFRECORDS)
         
-        print(tf_type)
         for shard in range(len(tf_type)):
             output_filename = os.path.join(PATH_DFRECORDS,'{}_{:03d}-of-{:03d}.tfrecord'.format("audios_sources", shard+1, len(tf_type)))
             data_shard = tf_type[shard:shard+1]

@@ -23,12 +23,12 @@ def parse_data(row_data):
         'original_phase': tf.io.FixedLenFeature([], tf.string),
     }
     parsed = tf.io.parse_single_example(row_data, feature_description)
-    mix_deserialized = tf.cast(tf.io.parse_tensor(parsed["mix"], out_type=tf.float16), tf.float32)
-    vocals_deserialized = tf.cast(tf.io.parse_tensor(parsed["vocals"], out_type=tf.float16), tf.float32)
-    bass_deserialized = tf.cast(tf.io.parse_tensor(parsed["bass"], out_type=tf.float16), tf.float32)
-    drums_deserialized = tf.cast(tf.io.parse_tensor(parsed["drums"], out_type=tf.float16), tf.float32)
-    others_deserialized = tf.cast(tf.io.parse_tensor(parsed["others"], out_type=tf.float16), tf.float32)
-    phase_deserialized = tf.cast(tf.io.parse_tensor(parsed["original_phase"], out_type=tf.float16), tf.float32)
+    mix_deserialized = tf.cast(tf.io.parse_tensor(parsed["mix"], out_type=tf.float32), tf.float32)
+    vocals_deserialized = tf.cast(tf.io.parse_tensor(parsed["vocals"], out_type=tf.float32), tf.float32)
+    bass_deserialized = tf.cast(tf.io.parse_tensor(parsed["bass"], out_type=tf.float32), tf.float32)
+    drums_deserialized = tf.cast(tf.io.parse_tensor(parsed["drums"], out_type=tf.float32), tf.float32)
+    others_deserialized = tf.cast(tf.io.parse_tensor(parsed["others"], out_type=tf.float32), tf.float32)
+    phase_deserialized = tf.cast(tf.io.parse_tensor(parsed["original_phase"], out_type=tf.float32), tf.float32)
     
     return mix_deserialized, vocals_deserialized, bass_deserialized, drums_deserialized, others_deserialized, phase_deserialized
     
@@ -53,18 +53,18 @@ def get_data(path):
 
 def train():
     ds_train = get_data("./TFRecords/train/*.tfrecord")
-    
     model = UNet(in_channels=1, out_channels=4).to(DEVICE)
     loss_fn, optimizer = avaliation_model(model)
 
     for epoch in range(NUM_EPOCHS):
         loop = tqdm(ds_train)
         for batch_idx, (features, targets, _) in enumerate(loop):
-            train_model(features, targets, model, loss_fn, optimizer)
+            loss, predictions, data, targets = train_model(features, targets, model, loss_fn, optimizer)
             checkpoint = {
                 "state_dict": model.state_dict(),
                 "optimizer":optimizer.state_dict(),
             }
+        evaluation_model(model, _, "train", loss, epoch)
         save_checkpoint(checkpoint)
     
 def evaluation():
@@ -74,7 +74,7 @@ def evaluation():
     load_checkpoint("./model/my_checkpoint.pth.tar", model)
     
     # loop = tqdm(ds_test)
-    evaluation_model(model, ds_test)
+    evaluation_model(model, ds_test, "test", ...,...)
     
     
     
