@@ -5,6 +5,7 @@ import torchaudio
 import torch.nn as nn
 import torch.optim as optim
 from torchmetrics.audio import SignalDistortionRatio
+import torchmetrics
 
 LEARNING_RATE = 1e-4
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -46,6 +47,7 @@ def audio_to_waveform(path):
 class TransformSpec:
     def __init__(self):
         self.n_fft = 1024
+        self.win_length = 1024
         self.hop_length = self.n_fft // 4
         self.window_fn=torch.hann_window
         self.power = False
@@ -65,6 +67,16 @@ class TransformSpec:
         magnitude = audio_spectogram.abs()
         phase = audio_spectogram.angle()
         return magnitude, phase
+
+    def transform_in_waveform(self, data_spectogram):
+        waveform = torch.istft(
+            data_spectogram,
+            n_fft=self.n_fft,
+            hop_length=self.hop_length,
+            win_length=self.win_length,
+            window=torch.hann_window(1024)
+        )
+        return waveform
     
 def avaliation_model(model):
     loss_fn = nn.L1Loss()
@@ -74,28 +86,11 @@ def avaliation_model(model):
 def save_checkpoint(state, filename="./model/my_checkpoint.pth.tar"):
     print("=> Saving checkpoint")
     torch.save(state, filename)
-
-def check_accuracy(output):
-    grifflim_transform = torchaudio.transforms.GriffinLim(n_fft=1024, n_iter=64)
-    waveform = grifflim_transform(output)
-    print("salvando")
-    torchaudio.save("saida.mp3", waveform, SAMPLE_RATE, format="mp3")
-    print("salvo")
     
-    
-        
-    # scores = []
-    # sdr = SignalDistortionRatio()
-    # for i in range(len(targets)):
-    #     scores.append(sdr(targets[i], output[i]))
-    # SDE = sum(scores) / len(scores)
-    # metrics.append({
-    #     "Epoch": f"{epoch+1}/{NUM_EPOCHS}",
-    #     "loss": loss.data.item(),
-    #     "SDE": SDE 
-    # })
-    # print("Epoch {}/{}, Loss: {:.3f}, SDR: {}".format(epoch+1,NUM_EPOCHS, loss.data.item(), SDE))
-    return metrics
+def load_checkpoint(checkpoint, model):
+    checkpoint = torch.load(checkpoint)
+    print("=> Loading checkpoint")
+    model.load_state_dict(checkpoint["state_dict"])
 
 def train_model(data, targets, model, loss_fn, optimizer):
     # Transformar um tensor em pytorch
@@ -120,4 +115,34 @@ def train_model(data, targets, model, loss_fn, optimizer):
     # loop.set_postfix(loss=loss.item())
     
 
-        
+def evaluation_model(model, ds_test):
+    model.eval()
+    NUM_CLASSES = 4
+    accuracy_metric = torchmetrics.Accuracy(task="multiclass", num_classes=NUM_CLASSES).to(DEVICE)
+    sdr = SignalDistortionRatio()
+    sdr_metrics = []
+    transform_spec = TransformSpec()
+    for (features, targets, phase) in ds_test:
+        features = torch.tensor(features.numpy()).to(DEVICE)
+        targets = torch.tensor(targets.numpy()).permute(0, 3, 1, 2).float().to(DEVICE)
+        phase = torch.tensor(phase.numpy()).to(DEVICE)
+        phase = phase.squeeze()  
+        predict = model(features)
+        with torch.no_grad():
+            for ch, data in enumerate(predict[0]):
+                reconstructed_predict = data * torch.exp(1j * phase)
+                reconstructed_targets = targets[0][ch] * torch.exp(1j * phase)
+                waveform_predict = transform_spec.transform_in_waveform(reconstructed_predict)
+                waveform_targets = transform_spec.transform_in_waveform(reconstructed_targets)
+                sdr_metrics.append(sdr(waveform_predict, waveform_targets))
+                print(sdr_metrics)
+                accuracy_metric.update(waveform_predict, waveform_targets)
+    final_val_accuracy = accuracy_metric.compute()
+    print(f"Validation Accuracy: {final_val_accuracy.item():.4f}")
+    print(sdr_metrics)
+            
+            
+            
+            
+            
+            

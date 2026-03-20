@@ -6,7 +6,8 @@ from Utils import \
                 avaliation_model, \
                 train_model, \
                 save_checkpoint, \
-                check_accuracy
+                load_checkpoint, \
+                evaluation_model
 from tqdm import tqdm
 
 # https://apxml.com/courses/getting-started-with-tensorflow/chapter-5-data-input-pipelines-tfdata/working-tfrecord-files
@@ -51,23 +52,33 @@ def get_data(path):
     return ds
 
 def train():
-    ds_train, ds_test = get_data("./TFRecords/train/*.tfrecord"), get_data("./TFRecords/test/*.tfrecord")
+    ds_train = get_data("./TFRecords/train/*.tfrecord")
     
     model = UNet(in_channels=1, out_channels=4).to(DEVICE)
     loss_fn, optimizer = avaliation_model(model)
+
+    for epoch in range(NUM_EPOCHS):
+        loop = tqdm(ds_train)
+        for batch_idx, (features, targets, _) in enumerate(loop):
+            train_model(features, targets, model, loss_fn, optimizer)
+            checkpoint = {
+                "state_dict": model.state_dict(),
+                "optimizer":optimizer.state_dict(),
+            }
+        save_checkpoint(checkpoint)
     
-    for data in ds_train:
-        print(data)
+def evaluation():
+    ds_test = get_data("./TFRecords/test/*.tfrecord")
+
+    model = UNet(in_channels=1, out_channels=4).to(DEVICE)
+    load_checkpoint("./model/my_checkpoint.pth.tar", model)
     
-    # for epoch in range(NUM_EPOCHS):
-    #     loop = tqdm(ds_train)
-    #     for batch_idx, (data, targets, phase) in enumerate(loop):
-    #         train_model(data, targets, model, loss_fn, optimizer)
-    #         checkpoint = {
-    #             "state_dict": model.state_dict(),
-    #             "optimizer":optimizer.state_dict(),
-    #         }
-    #     save_checkpoint(checkpoint)
+    # loop = tqdm(ds_test)
+    evaluation_model(model, ds_test)
+    
+    
+    
         
-train()
+# train()
+evaluation()
 # https://www.tensorflow.org/tutorials/load_data/tfrecord?hl=pt-br#reading_a_tfrecord_file
