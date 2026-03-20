@@ -6,3 +6,4 @@ TFRecords
 __pycache__
 test.py
 model
+*.txt

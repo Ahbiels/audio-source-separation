@@ -9,6 +9,7 @@ from Utils import \
                 load_checkpoint, \
                 evaluation_model
 from tqdm import tqdm
+import os.path
 
 # https://apxml.com/courses/getting-started-with-tensorflow/chapter-5-data-input-pipelines-tfdata/working-tfrecord-files
 # https://www.tensorflow.org/api_docs/python/tf/data/experimental/parallel_interleave
@@ -54,6 +55,8 @@ def get_data(path):
 def train():
     ds_train = get_data("./TFRecords/train/*.tfrecord")
     model = UNet(in_channels=1, out_channels=4).to(DEVICE)
+    if os.path.isfile('./model/my_checkpoint.pth.tar'):
+        load_checkpoint("./model/my_checkpoint.pth.tar", model)
     loss_fn, optimizer = avaliation_model(model)
 
     for epoch in range(NUM_EPOCHS):
@@ -79,6 +82,6 @@ def evaluation():
     
     
         
-# train()
-evaluation()
+train()
+# evaluation()
 # https://www.tensorflow.org/tutorials/load_data/tfrecord?hl=pt-br#reading_a_tfrecord_file
