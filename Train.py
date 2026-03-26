@@ -3,14 +3,17 @@ from Model import UNet
 from Utils import \
                 DEVICE, \
                 NUM_EPOCHS, \
+                TF_LOCATION, \
+                MODEL_LOCATION, \
+                IN_CHANNELS, \
+                OUT_CHANNELS, \
                 avaliation_model, \
                 train_model, \
                 save_checkpoint, \
                 load_checkpoint, \
                 evaluation_model
-from tqdm import tqdm
+# from tqdm import tqdm
 import os.path
-
 # https://apxml.com/courses/getting-started-with-tensorflow/chapter-5-data-input-pipelines-tfdata/working-tfrecord-files
 # https://www.tensorflow.org/api_docs/python/tf/data/experimental/parallel_interleave
 
@@ -47,41 +50,37 @@ def get_data(path):
     )
     ds = ds.map(parse_data, num_parallel_calls=tf.data.AUTOTUNE)
     ds = ds.map(split_data, num_parallel_calls=tf.data.AUTOTUNE)
+    # ds = ds.cache()
     
     ds = ds.prefetch(buffer_size=tf.data.AUTOTUNE)
 
     return ds
 
 def train():
-    ds_train = get_data("./TFRecords/train/*.tfrecord")
-    model = UNet(in_channels=1, out_channels=4).to(DEVICE)
-    if os.path.isfile('./model/my_checkpoint.pth.tar'):
-        load_checkpoint("./model/my_checkpoint.pth.tar", model)
+    ds_train = get_data(TF_LOCATION)
+    model = UNet(in_channels=IN_CHANNELS, out_channels=OUT_CHANNELS).to(DEVICE)
+    # if os.path.isfile(MODEL_LOCATION):
+    #     load_checkpoint(MODEL_LOCATION, model)
     loss_fn, optimizer = avaliation_model(model)
-
     for epoch in range(NUM_EPOCHS):
-        loop = tqdm(ds_train)
-        for batch_idx, (features, targets, _) in enumerate(loop):
-            loss, predictions, data, targets = train_model(features, targets, model, loss_fn, optimizer)
+        for batch_idx, (features, targets, _) in enumerate(ds_train):
+            train_model(features, targets, model, loss_fn, optimizer, epoch, batch_idx)
             checkpoint = {
                 "state_dict": model.state_dict(),
                 "optimizer":optimizer.state_dict(),
             }
-        evaluation_model(model, _, "train", loss, epoch)
         save_checkpoint(checkpoint)
     
 def evaluation():
-    ds_test = get_data("./TFRecords/test/*.tfrecord")
+    ds_test = get_data(TF_LOCATION)
 
-    model = UNet(in_channels=1, out_channels=4).to(DEVICE)
-    load_checkpoint("./model/my_checkpoint.pth.tar", model)
+    model = UNet(in_channels=IN_CHANNELS, out_channels=OUT_CHANNELS).to(DEVICE)
+    load_checkpoint(MODEL_LOCATION, model)
     
-    # loop = tqdm(ds_test)
-    evaluation_model(model, ds_test, "test", ...,...)
+    evaluation_model(model, ds_test)
     
-    
-    
-        
 train()
+        
+
 # evaluation()
 # https://www.tensorflow.org/tutorials/load_data/tfrecord?hl=pt-br#reading_a_tfrecord_file
