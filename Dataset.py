@@ -6,7 +6,7 @@ from Utils import TransformSpec, \
                     downmix_to_mono, \
                     resample
 import torch
-from pprint import pprint
+import os
 
 transform_spec = TransformSpec()
 
@@ -39,32 +39,59 @@ def load_data_path(dataset_path):
 
 def save_data(data, writer):
     tensors = {}
+    chunks = {}
     phase = None
-    for index in range(len(data.items())):
-        data_waveform, rate_of_sample = audio_to_waveform(data[index])
+    segment=10.0 #10 segundos cada chunk
+    
+    for index, item in data.items():
+        data_waveform, rate_of_sample = audio_to_waveform(item)
         data_waveform = downmix_to_mono(data_waveform)
         data_waveform, rate_of_sample = resample(data_waveform, rate_of_sample)
-        if index == 0:
-            data_spectogram, phase = transform_spec.transform_in_spectogram(data_waveform)
-            phase = phase.to(torch.float32)
-            phase = tf.io.serialize_tensor(phase.numpy()).numpy()
-        else:
-            data_spectogram, _ = transform_spec.transform_in_spectogram(data_waveform)
-        data_spectogram = data_spectogram.to(torch.float32)
-        tensors[index] = tf.io.serialize_tensor(data_spectogram.numpy()).numpy()
-    features = {
-        "mix": _bytes_feature(tensors[0]),
-        "vocals": _bytes_feature(tensors[1]),
-        "bass": _bytes_feature(tensors[2]),
-        "drums": _bytes_feature(tensors[3]),
-        "others": _bytes_feature(tensors[4]),
-        "original_phase": _bytes_feature(phase)
-    }
+        tensors[index] = data_waveform
+    mix = tensors[0][None]
+    chunk_len = int(rate_of_sample * segment)
+    length = mix.shape[-1]
     
-    row = tf.train.Example(features=tf.train.Features(feature=features))
-    writer.write(row.SerializeToString())
+    end = chunk_len
+    start = 0
+    # mix = mix[None]
+    # Criar os chunks (sem fade)
+    while start < length:
+        for i, source in tensors.items():
+            source_separated = source[None]
+            chunk = source_separated[:, :, start:end]
+            if chunk.shape[-1] < chunk_len:
+                pad_size = chunk_len - chunk.shape[-1]
+                chunk = torch.nn.functional.pad(chunk, (0, pad_size))
+            
+            if i == 0:
+                chunk_spectogram, phase = transform_spec.transform_in_spectogram(chunk)
+                phase = phase.to(torch.float32)
+                phase = tf.io.serialize_tensor(phase.numpy()).numpy()
+            else:
+                chunk_spectogram, _ = transform_spec.transform_in_spectogram(chunk)
+            chunk_spectogram = chunk_spectogram.to(torch.float32)
+            
+            chunks[i] = tf.io.serialize_tensor(chunk_spectogram.numpy()).numpy()
+
+        
+        features = {
+            "mix": _bytes_feature(chunks[0]),
+            "vocals": _bytes_feature(chunks[1]),
+            "bass": _bytes_feature(chunks[2]),
+            "drums": _bytes_feature(chunks[3]),
+            "others": _bytes_feature(chunks[4]),
+            "original_phase": _bytes_feature(phase)
+        }
+        
+        row = tf.train.Example(features=tf.train.Features(feature=features))
+        writer.write(row.SerializeToString())
+        
+        start += chunk_len
+        end = start + chunk_len
 
 def Get_dataset(dataset_path):
+    os.system('cls' if os.name == 'nt' else 'clear')
     tf_train, tf_test = load_data_path(dataset_path)
     
     df = {
@@ -81,6 +108,7 @@ def Get_dataset(dataset_path):
             output_filename = os.path.join(PATH_DFRECORDS,'{}_{:03d}-of-{:03d}.tfrecord'.format("audios_sources", shard+1, len(tf_type)))
             data_shard = tf_type[shard:shard+1]
             for data in data_shard:
+                print(f"{shard+1} of {len(tf_type)} - {type}")
                 with tf.io.TFRecordWriter(output_filename) as writer:
                         save_data(data, writer)
 
@@ -88,6 +116,7 @@ Get_dataset("./audio")
 
 """
 Boas práticas:
-- Salvar o local dos arquivos, ao invés de salvar o arquivo propriamente
-- Salvar cada 'linha' processada por vez, para não sobrecarregar na hora de criar o arquivo TFRecords
+- Salvar os arquivos em shard (um arquivo para cada faixa)
+- Para cada música, criar chunk de dados
+- Salvar a fase (phase) da música para reconstruí-la no final para validação e teste.
 """
