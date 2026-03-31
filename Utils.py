@@ -46,8 +46,8 @@ class TransformSpec:
         self.win_length = 1024
         self.hop_length = self.n_fft // 4
         self.window_fn=torch.hann_window
-        self.power = False
-        self.center = False
+        self.power = None
+        self.center = None
         self.pad_mode = "reflect"
     
     def transform_in_spectogram(self, data_waveform):
