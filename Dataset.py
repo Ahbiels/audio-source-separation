@@ -65,14 +65,17 @@ def save_data(data, writer):
                 pad_size = chunk_len - chunk.shape[-1]
                 chunk = torch.nn.functional.pad(chunk, (0, pad_size))
             
+            #O .squeeze() remove qualquer dimensão que seja tamanho 1  transformando (1, 1, 513, 622) em (513, 622)
             if i == 0:
                 chunk_spectogram, phase = transform_spec.transform_in_spectogram(chunk)
                 phase = phase.to(torch.float32)
+                phase = phase.squeeze().to(torch.float32)
                 phase = tf.io.serialize_tensor(phase.numpy()).numpy()
             else:
                 chunk_spectogram, _ = transform_spec.transform_in_spectogram(chunk)
             chunk_spectogram = chunk_spectogram.to(torch.float32)
             
+            chunk_spectogram = chunk_spectogram.squeeze().to(torch.float32)
             chunks[i] = tf.io.serialize_tensor(chunk_spectogram.numpy()).numpy()
 
         

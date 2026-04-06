@@ -11,7 +11,8 @@ from Utils import \
                 train_model, \
                 save_checkpoint, \
                 load_checkpoint, \
-                evaluation_model
+                evaluation_model, \
+                plot_data
 # from tqdm import tqdm
 import os.path
 # https://apxml.com/courses/getting-started-with-tensorflow/chapter-5-data-input-pipelines-tfdata/working-tfrecord-files
@@ -50,26 +51,35 @@ def get_data(path):
     )
     ds = ds.map(parse_data, num_parallel_calls=tf.data.AUTOTUNE)
     ds = ds.map(split_data, num_parallel_calls=tf.data.AUTOTUNE)
-    # ds = ds.cache()
+    ds = ds.cache()
+    ds = ds.batch(8)
     
     ds = ds.prefetch(buffer_size=tf.data.AUTOTUNE)
 
     return ds
 
 def train():
+    count = 0
+    loss_list = []
     ds_train = get_data(TF_LOCATION)
+    # armazenar quantos dados há dentro do dataset
+    for _ in ds_train:
+        count += 1
+    print(count)
     model = UNet(in_channels=IN_CHANNELS, out_channels=OUT_CHANNELS).to(DEVICE)
-    # if os.path.isfile(MODEL_LOCATION):
-    #     load_checkpoint(MODEL_LOCATION, model)
+    if os.path.isfile(MODEL_LOCATION):
+        load_checkpoint(MODEL_LOCATION, model)
     loss_fn, optimizer = avaliation_model(model)
     for epoch in range(NUM_EPOCHS):
         for batch_idx, (features, targets, _) in enumerate(ds_train):
-            train_model(features, targets, model, loss_fn, optimizer, epoch, batch_idx)
+            train_model(features, targets, model, loss_fn, optimizer, epoch, batch_idx,loss_list, count)
             checkpoint = {
                 "state_dict": model.state_dict(),
                 "optimizer":optimizer.state_dict(),
             }
         save_checkpoint(checkpoint)
+    
+    plot_data(loss_list, 0)
     
 def evaluation():
     ds_test = get_data(TF_LOCATION)

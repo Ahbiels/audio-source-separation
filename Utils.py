@@ -6,11 +6,12 @@ import torch.nn as nn
 import torch.optim as optim
 from torchmetrics.audio import ScaleInvariantSignalDistortionRatio
 import torchmetrics
+import matplotlib.pyplot as plt
 
-
-LEARNING_RATE = 1e-4
+# LEARNING_RATE = 1e-4
+LEARNING_RATE = 5e-4
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-NUM_EPOCHS = 3
+NUM_EPOCHS = 4
 NUM_WORKERS = 2
 SAMPLE_RATE = 16000
 TF_LOCATION="./TFRecords/train/*.tfrecord"
@@ -88,11 +89,11 @@ def load_checkpoint(checkpoint, model):
     print("=> Loading checkpoint")
     model.load_state_dict(checkpoint["state_dict"])
 
-def train_model(features, targets, model, loss_fn, optimizer, epoch, batch_idx):
+def train_model(features, targets, model, loss_fn, optimizer, epoch, batch_idx, loss_list, max_epochs):
     # Transformar um tensor em pytorch
-    features = torch.tensor(features.numpy()).to(DEVICE)
     
     # Transformar [1, 513, 21062, 4] em [1, 4, 513, 21062] e passar para pytorch
+    features = torch.tensor(features.numpy()).permute(0, 2, 1, 3).to(DEVICE)
     targets = torch.tensor(targets.numpy()).permute(0, 3, 1, 2).float().to(DEVICE)
     with torch.cuda.amp.autocast():
         predictions = model(features)
@@ -101,7 +102,8 @@ def train_model(features, targets, model, loss_fn, optimizer, epoch, batch_idx):
     loss.backward()
     optimizer.step()
     
-    print(f"Epoch: {epoch+1} | Batch: {batch_idx+1} | Loss: {loss.item()}")
+    print(f"Epoch: {epoch+1}/{NUM_EPOCHS} | Batch: {batch_idx+1}/{max_epochs} | Loss: {loss.item()}")
+    loss_list.append(loss.item())
     
     return loss, predictions, features, targets
     # optimizer.zero_grad()
@@ -143,6 +145,14 @@ def evaluation_model(model, ds_test):
     print(f"Validation Accuracy: {final_val_accuracy.item():.4f}")
     print(f"Scale-Invariant Signal-to-Distortion Ratio: {si_sdr_metrics}")
     # print(f"L1 Loss Function {loss}")
+
+def plot_data(loss, i):
+    plt.figure()
+    plt.plot(loss)
+    plt.xlabel("Iterations")
+    plt.ylabel("Loss")
+    plt.title("Training Loss Evolution")
+    plt.savefig(f"loss_img/loss_{i}.png")
             
             
             
