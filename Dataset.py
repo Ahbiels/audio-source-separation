@@ -37,7 +37,7 @@ def load_data_path(dataset_path):
         subsets.append(samples)
     return subsets
 
-def save_data(data, writer):
+def save_data(data, writer, type):
     tensors = {}
     chunks = {}
     phase = None
@@ -66,7 +66,7 @@ def save_data(data, writer):
                 chunk = torch.nn.functional.pad(chunk, (0, pad_size))
             
             #O .squeeze() remove qualquer dimensão que seja tamanho 1  transformando (1, 1, 513, 622) em (513, 622)
-            if i == 0:
+            if i == 0 and type == "test":
                 chunk_spectogram, phase = transform_spec.transform_in_spectogram(chunk)
                 phase = phase.to(torch.float32)
                 phase = phase.squeeze().to(torch.float32)
@@ -85,8 +85,12 @@ def save_data(data, writer):
             "bass": _bytes_feature(chunks[2]),
             "drums": _bytes_feature(chunks[3]),
             "others": _bytes_feature(chunks[4]),
-            "original_phase": _bytes_feature(phase)
         }
+        
+        if type == "test":
+            features["original_phase"] = _bytes_feature(phase)
+        
+        print(features.keys())
         
         row = tf.train.Example(features=tf.train.Features(feature=features))
         writer.write(row.SerializeToString())
@@ -114,7 +118,7 @@ def Get_dataset(dataset_path):
             for data in data_shard:
                 print(f"{shard+1} of {len(tf_type)} - {type}")
                 with tf.io.TFRecordWriter(output_filename) as writer:
-                        save_data(data, writer)
+                        save_data(data, writer, type)
 
 Get_dataset("./audio")
 
