@@ -4,7 +4,7 @@ from torchaudio import functional as AF
 import torchaudio
 import torch.nn as nn
 import torch.optim as optim
-from torchmetrics.audio import ScaleInvariantSignalDistortionRatio
+from torchmetrics.audio import ScaleInvariantSignalDistortionRatio, SignalDistortionRatio
 import torchmetrics
 import matplotlib.pyplot as plt
 
@@ -89,12 +89,20 @@ def load_checkpoint(checkpoint, model):
     print("=> Loading checkpoint")
     model.load_state_dict(checkpoint["state_dict"])
 
-def train_model(features, targets, model, loss_fn, optimizer, epoch, batch_idx, loss_list, max_epochs):
-    # Transformar um tensor em pytorch
-    
+def torch_to_tensor(features, targets, phase=None, purpose="train"):
     # Transformar [1, 513, 21062, 4] em [1, 4, 513, 21062] e passar para pytorch
     features = torch.tensor(features.numpy()).permute(0, 2, 1, 3).to(DEVICE)
     targets = torch.tensor(targets.numpy()).permute(0, 3, 1, 2).float().to(DEVICE)
+    if purpose == "eval":
+        phase = torch.tensor(phase.numpy()).to(DEVICE)
+        phase = phase.squeeze() 
+        return features, targets, phase
+    return features, targets
+        
+    
+
+def train_model(features, targets, model, loss_fn, optimizer, epoch, batch_idx, loss_list, max_epochs):
+    features, targets = torch_to_tensor(features, targets)
     with torch.cuda.amp.autocast():
         predictions = model(features)
         loss = loss_fn(predictions, targets)
@@ -113,20 +121,19 @@ def train_model(features, targets, model, loss_fn, optimizer, epoch, batch_idx, 
 
     # # update tqdm loop
     # loop.set_postfix(loss=loss.item())
-    
 
-def evaluation_model(model, ds_test):
+
+def evaluation_model(model, ds_test, max_epochs, purpose, attempt):
     model.eval()
     NUM_CLASSES = 4
-    accuracy_metric = torchmetrics.Accuracy(task="multiclass", num_classes=NUM_CLASSES).to(DEVICE)
     si_sdr = ScaleInvariantSignalDistortionRatio()
     si_sdr_metrics = []
+    sdr = SignalDistortionRatio()
+    sdr_metrics = []
     transform_spec = TransformSpec()
-    for (features, targets, phase) in ds_test:
-        features = torch.tensor(features.numpy()).to(DEVICE)
-        targets = torch.tensor(targets.numpy()).permute(0, 3, 1, 2).float().to(DEVICE)
-        phase = torch.tensor(phase.numpy()).to(DEVICE)
-        phase = phase.squeeze()  
+    for batch_idx, (features, targets, phase) in enumerate(ds_test):
+        si_sdr_metric = []
+        features, targets, phase = torch_to_tensor(features, targets, phase, "eval")
         predict = model(features)
         with torch.no_grad():
             for ch, data in enumerate(predict[0]):
@@ -134,25 +141,23 @@ def evaluation_model(model, ds_test):
                 reconstructed_targets = targets[0][ch] * torch.exp(1j * phase)
                 waveform_predict = transform_spec.transform_in_waveform(reconstructed_predict)
                 waveform_targets = transform_spec.transform_in_waveform(reconstructed_targets)
-                # print("predict mean:", waveform_predict.mean())
-                # print("predict std:", waveform_predict.std())
-                # print("predict sum:", waveform_predict.abs().sum())
-                si_sdr_metrics.append(si_sdr(waveform_predict, waveform_targets))
-                print(si_sdr_metrics)
-                accuracy_metric.update(waveform_predict, waveform_targets)
-    final_val_accuracy = accuracy_metric.compute()
-    si_sdr_metrics = sum(si_sdr_metrics) / len(si_sdr_metrics)
-    print(f"Validation Accuracy: {final_val_accuracy.item():.4f}")
-    print(f"Scale-Invariant Signal-to-Distortion Ratio: {si_sdr_metrics}")
-    # print(f"L1 Loss Function {loss}")
+                si_sdr_metric.append(si_sdr(waveform_predict, waveform_targets))
+            print(f"Batch: {batch_idx+1}/{max_epochs} | SI-SDR: {sum(si_sdr_metric) / len(si_sdr_metric)}")
+            si_sdr_metrics.append(sum(si_sdr_metric) / len(si_sdr_metric))
+    plot_data(si_sdr_metrics, attempt, purpose=purpose)
+    # final_val_accuracy = accuracy_metric.compute()
+    # si_sdr_metrics = sum(si_sdr_metrics) / len(si_sdr_metrics)
+    # print(f"Validation Accuracy: {final_val_accuracy.item():.4f}")
+    # print(f"Scale-Invariant Signal-to-Distortion Ratio: {si_sdr_metrics}")
 
-def plot_data(loss, i):
+def plot_data(metric, i, purpose):
     plt.figure()
-    plt.plot(loss)
+    plt.plot(metric)
     plt.xlabel("Iterations")
-    plt.ylabel("Loss")
-    plt.title("Training Loss Evolution")
-    plt.savefig(f"loss_img/loss_{i}.png")
+    metric_type = "loss" if purpose == "train" else "si_sdr"
+    plt.ylabel(metric_type)
+    plt.title(f"Training metric_type Evolution")
+    plt.savefig(f"results_img/{metric_type}_{i}.png")
             
             
             

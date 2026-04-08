@@ -28,26 +28,23 @@ def get_args():
     return parser.parse_args()
 
 def parse_data(row_data, purpose):
-    feature_description = {
-        'mix': tf.io.FixedLenFeature([], tf.string),
-        'vocals': tf.io.FixedLenFeature([], tf.string),
-        'bass': tf.io.FixedLenFeature([], tf.string),
-        'drums': tf.io.FixedLenFeature([], tf.string),
-        'others': tf.io.FixedLenFeature([], tf.string),
-    }
-    parsed = tf.io.parse_single_example(row_data, feature_description)
-    mix_deserialized = tf.cast(tf.io.parse_tensor(parsed["mix"], out_type=tf.float32), tf.float32)
-    vocals_deserialized = tf.cast(tf.io.parse_tensor(parsed["vocals"], out_type=tf.float32), tf.float32)
-    bass_deserialized = tf.cast(tf.io.parse_tensor(parsed["bass"], out_type=tf.float32), tf.float32)
-    drums_deserialized = tf.cast(tf.io.parse_tensor(parsed["drums"], out_type=tf.float32), tf.float32)
-    others_deserialized = tf.cast(tf.io.parse_tensor(parsed["others"], out_type=tf.float32), tf.float32)
-    
+    base_features = ["mix", "vocals", "bass", "drums", "others"]
     if purpose == "eval":
-        feature_description["original_phase"] = tf.io.FixedLenFeature([], tf.string)
-        phase_deserialized = tf.cast(tf.io.parse_tensor(parsed["original_phase"], out_type=tf.float32), tf.float32)
-        return mix_deserialized, vocals_deserialized, bass_deserialized, drums_deserialized, others_deserialized, phase_deserialized
-    else:
-        return mix_deserialized, vocals_deserialized, bass_deserialized, drums_deserialized, others_deserialized
+        base_features.append("original_phase")
+    
+    feature_description = {
+        key: tf.io.FixedLenFeature([], tf.string)
+        for key in base_features
+    }
+    
+    parsed = tf.io.parse_single_example(row_data, feature_description)
+    
+    feature_deserialized = [
+        tf.cast(tf.io.parse_tensor(parsed[key], out_type=tf.float32), tf.float32)
+        for key in base_features
+    ]
+    
+    return feature_deserialized
     
 def split_data(*row_data, purpose):
     X = tf.expand_dims(row_data[0], axis=1)
@@ -64,7 +61,7 @@ def get_data(path, batch_size, purpose):
     ds = ds.map(lambda x: parse_data(x, purpose), num_parallel_calls=tf.data.AUTOTUNE)
     ds = ds.map(lambda *x: split_data(*x, purpose=purpose), num_parallel_calls=tf.data.AUTOTUNE)
     
-    ds = ds.cache()
+    # ds = ds.cache()
     
     ds = ds.batch(batch_size)
     ds = ds.prefetch(buffer_size=tf.data.AUTOTUNE)
@@ -91,15 +88,17 @@ def train(batch_size, purpose, attempt):
             }
         save_checkpoint(checkpoint)
     
-    plot_data(loss_list, attempt)
+    plot_data(loss_list, attempt, purpose)
     
-def evaluation():
-    ds_test = get_data(TF_LOCATION)
-
+def evaluation(purpose, attempt):
+    count = 0
+    ds_test = get_data("./TFRecords/test/*.tfrecord", 1, purpose)
+    for _ in ds_test:
+        count += 1
     model = UNet(in_channels=IN_CHANNELS, out_channels=OUT_CHANNELS).to(DEVICE)
     load_checkpoint(MODEL_LOCATION, model)
     
-    evaluation_model(model, ds_test)
+    evaluation_model(model, ds_test, count, purpose, attempt)
 
 if __name__ == "__main__":
     args = get_args()
@@ -108,7 +107,7 @@ if __name__ == "__main__":
     if args.purpose == "train":
         train(args.batch_size, args.purpose, args.attempt)
     elif args.purpose == "eval":
-        evaluation()
+        evaluation(args.purpose, args.attempt)
     else:
         print(f"{args.purpose} is invalid. Please, use 'train' or 'eval'")
     

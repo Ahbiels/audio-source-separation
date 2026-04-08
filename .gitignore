@@ -7,4 +7,4 @@ __pycache__
 test.py
 model
 *.txt
-loss_img
+results_img
