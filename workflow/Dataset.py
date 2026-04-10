@@ -1,7 +1,7 @@
 import os
 import tensorflow as tf
 import numpy as np
-from Utils import TransformSpec, \
+from .Utils import TransformSpec, \
                     audio_to_waveform, \
                     downmix_to_mono, \
                     resample
@@ -37,7 +37,7 @@ def load_data_path(dataset_path):
         subsets.append(samples)
     return subsets
 
-def save_data(data, writer, type):
+def save_data(data, writer, type, new_rate_sample):
     tensors = {}
     chunks = {}
     phase = None
@@ -46,7 +46,7 @@ def save_data(data, writer, type):
     for index, item in data.items():
         data_waveform, rate_of_sample = audio_to_waveform(item)
         data_waveform = downmix_to_mono(data_waveform)
-        data_waveform, rate_of_sample = resample(data_waveform, rate_of_sample)
+        data_waveform, rate_of_sample = resample(data_waveform, rate_of_sample, new_rate_sample)
         tensors[index] = data_waveform
     mix = tensors[0][None]
     chunk_len = int(rate_of_sample * segment)
@@ -90,15 +90,14 @@ def save_data(data, writer, type):
         if type == "test":
             features["original_phase"] = _bytes_feature(phase)
         
-        print(features.keys())
-        
         row = tf.train.Example(features=tf.train.Features(feature=features))
         writer.write(row.SerializeToString())
         
         start += chunk_len
         end = start + chunk_len
 
-def Get_dataset(dataset_path):
+def Get_dataset(dataset_path, new_rate_sample):
+    print("=> Create TFRecords")
     os.system('cls' if os.name == 'nt' else 'clear')
     tf_train, tf_test = load_data_path(dataset_path)
     
@@ -118,13 +117,4 @@ def Get_dataset(dataset_path):
             for data in data_shard:
                 print(f"{shard+1} of {len(tf_type)} - {type}")
                 with tf.io.TFRecordWriter(output_filename) as writer:
-                        save_data(data, writer, type)
-
-Get_dataset("./audio")
-
-"""
-Boas práticas:
-- Salvar os arquivos em shard (um arquivo para cada faixa)
-- Para cada música, criar chunk de dados
-- Salvar a fase (phase) da música para reconstruí-la no final para validação e teste.
-"""
+                        save_data(data, writer, type, new_rate_sample)

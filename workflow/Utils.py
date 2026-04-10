@@ -7,26 +7,12 @@ import torch.optim as optim
 from torchmetrics.audio import ScaleInvariantSignalDistortionRatio, SignalDistortionRatio
 import torchmetrics
 import matplotlib.pyplot as plt
-
-# LEARNING_RATE = 1e-4
-LEARNING_RATE = 5e-4
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-NUM_EPOCHS = 4
-NUM_WORKERS = 2
-SAMPLE_RATE = 16000
-TF_LOCATION="./TFRecords/train/*.tfrecord"
-MODEL_LOCATION="./model/my_checkpoint.pth.tar"
-IN_CHANNELS=1
-OUT_CHANNELS=4
-
-# scaler = torch.cuda.amp.GradScaler() usar quando for colocar os dados em float16 (test)
-
-metrics = []
+import os
 
 def downmix_to_mono(waveform):
   return torch.mean(waveform, dim=0, keepdim=True)
 
-def resample(waveform, rate_of_sample, new_rate_sample = SAMPLE_RATE):
+def resample(waveform, rate_of_sample, new_rate_sample):
     # Normal frequency = 44.1 kHz = 44100
     # resample for 16 kHz = 16000
     
@@ -75,34 +61,35 @@ class TransformSpec:
         )
         return waveform
     
-def avaliation_model(model):
+def avaliation_model(model, learning_rate):
     loss_fn = nn.L1Loss()
-    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     return loss_fn, optimizer
 
-def save_checkpoint(state, filename=MODEL_LOCATION):
+def save_checkpoint(state, filename):
     print("=> Saving checkpoint")
     torch.save(state, filename)
     
 def load_checkpoint(checkpoint, model):
-    checkpoint = torch.load(checkpoint)
-    print("=> Loading checkpoint")
-    model.load_state_dict(checkpoint["state_dict"])
+    if os.path.isfile(checkpoint):
+        checkpoint = torch.load(checkpoint)
+        print("=> Loading checkpoint")
+        model.load_state_dict(checkpoint["state_dict"])
+    else:
+        print("=> No checkpoint")
 
-def torch_to_tensor(features, targets, phase=None, purpose="train"):
+def torch_to_tensor(features, targets, phase=None, purpose="train", device="cpu"):
     # Transformar [1, 513, 21062, 4] em [1, 4, 513, 21062] e passar para pytorch
-    features = torch.tensor(features.numpy()).permute(0, 2, 1, 3).to(DEVICE)
-    targets = torch.tensor(targets.numpy()).permute(0, 3, 1, 2).float().to(DEVICE)
+    features = torch.tensor(features.numpy()).permute(0, 2, 1, 3).to(device)
+    targets = torch.tensor(targets.numpy()).permute(0, 3, 1, 2).float().to(device)
     if purpose == "eval":
-        phase = torch.tensor(phase.numpy()).to(DEVICE)
+        phase = torch.tensor(phase.numpy()).to(device)
         phase = phase.squeeze() 
         return features, targets, phase
     return features, targets
-        
-    
 
-def train_model(features, targets, model, loss_fn, optimizer, epoch, batch_idx, loss_list, max_epochs):
-    features, targets = torch_to_tensor(features, targets)
+def train_model(features, targets, model, loss_fn, optimizer, epoch, batch_idx, loss_list, max_epochs, max_batchs, device):
+    features, targets = torch_to_tensor(features, targets, device=device)
     with torch.cuda.amp.autocast():
         predictions = model(features)
         loss = loss_fn(predictions, targets)
@@ -110,7 +97,7 @@ def train_model(features, targets, model, loss_fn, optimizer, epoch, batch_idx, 
     loss.backward()
     optimizer.step()
     
-    print(f"Epoch: {epoch+1}/{NUM_EPOCHS} | Batch: {batch_idx+1}/{max_epochs} | Loss: {loss.item()}")
+    print(f"Epoch: {epoch+1}/{max_epochs} | Batch: {batch_idx+1}/{max_batchs} | Loss: {loss.item()}")
     loss_list.append(loss.item())
     
     return loss, predictions, features, targets
@@ -123,17 +110,15 @@ def train_model(features, targets, model, loss_fn, optimizer, epoch, batch_idx, 
     # loop.set_postfix(loss=loss.item())
 
 
-def evaluation_model(model, ds_test, max_epochs, purpose, attempt):
+def evaluation_model(model, ds_test, max_batchs, device):
     model.eval()
     NUM_CLASSES = 4
     si_sdr = ScaleInvariantSignalDistortionRatio()
     si_sdr_metrics = []
-    sdr = SignalDistortionRatio()
-    sdr_metrics = []
     transform_spec = TransformSpec()
     for batch_idx, (features, targets, phase) in enumerate(ds_test):
         si_sdr_metric = []
-        features, targets, phase = torch_to_tensor(features, targets, phase, "eval")
+        features, targets, phase = torch_to_tensor(features, targets, phase, "eval", device=device)
         predict = model(features)
         with torch.no_grad():
             for ch, data in enumerate(predict[0]):
@@ -142,15 +127,12 @@ def evaluation_model(model, ds_test, max_epochs, purpose, attempt):
                 waveform_predict = transform_spec.transform_in_waveform(reconstructed_predict)
                 waveform_targets = transform_spec.transform_in_waveform(reconstructed_targets)
                 si_sdr_metric.append(si_sdr(waveform_predict, waveform_targets))
-            print(f"Batch: {batch_idx+1}/{max_epochs} | SI-SDR: {sum(si_sdr_metric) / len(si_sdr_metric)}")
+            print(f"Batch: {batch_idx+1}/{max_batchs} | SI-SDR: {sum(si_sdr_metric) / len(si_sdr_metric)}")
             si_sdr_metrics.append(sum(si_sdr_metric) / len(si_sdr_metric))
-    plot_data(si_sdr_metrics, attempt, purpose=purpose)
-    # final_val_accuracy = accuracy_metric.compute()
-    # si_sdr_metrics = sum(si_sdr_metrics) / len(si_sdr_metrics)
-    # print(f"Validation Accuracy: {final_val_accuracy.item():.4f}")
-    # print(f"Scale-Invariant Signal-to-Distortion Ratio: {si_sdr_metrics}")
+    return si_sdr_metrics
 
 def plot_data(metric, i, purpose):
+    print("=> saving results")
     plt.figure()
     plt.plot(metric)
     plt.xlabel("Iterations")

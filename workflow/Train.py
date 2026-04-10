@@ -1,31 +1,13 @@
-import argparse
 import tensorflow as tf
-from Model import UNet
-from Utils import \
-                DEVICE, \
-                NUM_EPOCHS, \
-                TF_LOCATION, \
-                MODEL_LOCATION, \
-                IN_CHANNELS, \
-                OUT_CHANNELS, \
+from .Model import UNet
+from .Utils import \
                 avaliation_model, \
                 train_model, \
                 save_checkpoint, \
-                load_checkpoint, \
-                evaluation_model, \
-                plot_data
+                evaluation_model
 # from tqdm import tqdm
-import os
 # https://apxml.com/courses/getting-started-with-tensorflow/chapter-5-data-input-pipelines-tfdata/working-tfrecord-files
 # https://www.tensorflow.org/api_docs/python/tf/data/experimental/parallel_interleave
-
-def get_args():
-    parser = argparse.ArgumentParser(description='Training a UNET model for audio segmentation.')
-    parser.add_argument('--batch-size', '-b', dest='batch_size', type=int, default=8, help='Batch size')
-    parser.add_argument('--purpose', '-p', dest='purpose', type=str, default="train", help='Purpose (train or eval)')
-    parser.add_argument('--attempt', '-a', dest='attempt', type=int, default=1, help='training attempt number')
-    
-    return parser.parse_args()
 
 def parse_data(row_data, purpose):
     base_features = ["mix", "vocals", "bass", "drums", "others"]
@@ -53,6 +35,7 @@ def split_data(*row_data, purpose):
     return X, y, phase
 
 def get_data(path, batch_size, purpose):
+    print(f"=> Get {purpose} data")
     ds = tf.data.TFRecordDataset.list_files(path, shuffle=False).interleave(
         lambda x: tf.data.TFRecordDataset(x),
         num_parallel_calls=tf.data.AUTOTUNE,
@@ -68,47 +51,30 @@ def get_data(path, batch_size, purpose):
 
     return ds
 
-def train(batch_size, purpose, attempt):
-    count = 0
+def train(ds_train, model, num_epochs, learning_rate, model_saved_location, device):
+    print("=> Training the model")
     loss_list = []
-    ds_train = get_data(TF_LOCATION, batch_size, purpose)
-    # armazenar quantos dados há dentro do dataset
-    for _ in ds_train:
+    count = 0
+    for _ in ds_train: #armazenar quantos dados há dentro do dataset
         count += 1
-    model = UNet(in_channels=IN_CHANNELS, out_channels=OUT_CHANNELS).to(DEVICE)
-    if os.path.isfile(MODEL_LOCATION):
-        load_checkpoint(MODEL_LOCATION, model)
-    loss_fn, optimizer = avaliation_model(model)
-    for epoch in range(NUM_EPOCHS):
+    loss_fn, optimizer = avaliation_model(model, learning_rate)
+    for epoch in range(num_epochs):
         for batch_idx, (features, targets, _) in enumerate(ds_train):
-            train_model(features, targets, model, loss_fn, optimizer, epoch, batch_idx,loss_list, count)
+            train_model(features, targets, model, loss_fn, optimizer, epoch, batch_idx,loss_list, num_epochs, count, device)
             checkpoint = {
                 "state_dict": model.state_dict(),
                 "optimizer":optimizer.state_dict(),
             }
-        save_checkpoint(checkpoint)
+        save_checkpoint(checkpoint, model_saved_location)
     
-    plot_data(loss_list, attempt, purpose)
+    return loss_list
     
-def evaluation(purpose, attempt):
+def evaluation(ds_test, model, device):
+    print("=> Evaluating the model")
     count = 0
-    ds_test = get_data("./TFRecords/test/*.tfrecord", 1, purpose)
     for _ in ds_test:
         count += 1
-    model = UNet(in_channels=IN_CHANNELS, out_channels=OUT_CHANNELS).to(DEVICE)
-    load_checkpoint(MODEL_LOCATION, model)
     
-    evaluation_model(model, ds_test, count, purpose, attempt)
-
-if __name__ == "__main__":
-    args = get_args()
-    os.system('cls' if os.name == 'nt' else 'clear')
-
-    if args.purpose == "train":
-        train(args.batch_size, args.purpose, args.attempt)
-    elif args.purpose == "eval":
-        evaluation(args.purpose, args.attempt)
-    else:
-        print(f"{args.purpose} is invalid. Please, use 'train' or 'eval'")
+    return evaluation_model(model, ds_test, count, device)
     
 # https://www.tensorflow.org/tutorials/load_data/tfrecord?hl=pt-br#reading_a_tfrecord_file
