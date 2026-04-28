@@ -12,10 +12,8 @@ import os
 def downmix_to_mono(waveform):
   return torch.mean(waveform, dim=0, keepdim=True)
 
-def resample(waveform, rate_of_sample, new_rate_sample):
-    # Normal frequency = 44.1 kHz = 44100
-    # resample for 16 kHz = 16000
-    
+# No longer be used this function
+def resample(waveform, rate_of_sample, new_rate_sample):    
     waveform = AF.resample(
         waveform,
         orig_freq=rate_of_sample,
@@ -29,12 +27,12 @@ def audio_to_waveform(path):
 
 class TransformSpec:
     def __init__(self):
-        self.n_fft = 1024
-        self.win_length = 1024
+        self.n_fft = 2048
+        self.win_length = 2048
         self.hop_length = self.n_fft // 4
         self.window_fn=torch.hann_window
         self.power = None
-        self.center = None
+        self.center = True
         self.pad_mode = "reflect"
     
     def transform_in_spectogram(self, data_waveform):
@@ -57,7 +55,7 @@ class TransformSpec:
             n_fft=self.n_fft,
             hop_length=self.hop_length,
             win_length=self.win_length,
-            window=torch.hann_window(1024)
+            window=torch.hann_window(self.win_length)
         )
         return waveform
     

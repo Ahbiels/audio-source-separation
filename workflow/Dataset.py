@@ -41,12 +41,12 @@ def save_data(data, writer, type, new_rate_sample):
     tensors = {}
     chunks = {}
     phase = None
-    segment=10.0 #10 segundos cada chunk
+    segment=2 #2 segundos cada chunk
     
     for index, item in data.items():
         data_waveform, rate_of_sample = audio_to_waveform(item)
         data_waveform = downmix_to_mono(data_waveform)
-        data_waveform, rate_of_sample = resample(data_waveform, rate_of_sample, new_rate_sample)
+        # data_waveform, rate_of_sample = resample(data_waveform, rate_of_sample, new_rate_sample)
         tensors[index] = data_waveform
     mix = tensors[0][None]
     chunk_len = int(rate_of_sample * segment)
@@ -54,7 +54,6 @@ def save_data(data, writer, type, new_rate_sample):
     
     end = chunk_len
     start = 0
-    # mix = mix[None]
     # Criar os chunks (sem fade)
     while start < length:
         for i, source in tensors.items():

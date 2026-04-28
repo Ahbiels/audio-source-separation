@@ -1,11 +1,14 @@
 from workflow import load_checkpoint, UNet, Get_dataset, get_data, train, plot_data, evaluation
 import torch
 import argparse
+import multiprocessing
 
-LEARNING_RATE = 5e-4
+num_nucleos = multiprocessing.cpu_count()
+
+LEARNING_RATE = 1e-6
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 NUM_EPOCHS = 4
-NUM_WORKERS = 2
+NUM_WORKERS = num_nucleos
 NEW_RATE_SAMPLE = 16000
 TF_LOCATION_TRAIN="./TFRecords/train/*.tfrecord"
 TF_LOCATION_TEST="./TFRecords/test/*.tfrecord"

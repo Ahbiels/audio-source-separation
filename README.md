@@ -1,1 +1,1 @@
-pip3 install torch torchaudio matplotlib
+The pipeline file is the main file of the project.

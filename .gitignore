@@ -8,3 +8,4 @@ test.py
 model
 *.txt
 results_img
+.DS_Store
