@@ -37,17 +37,17 @@ def split_data(*row_data, purpose):
 def get_data(path, batch_size, purpose):
     print(f"=> Get {purpose} data")
     ds = tf.data.TFRecordDataset.list_files(path, shuffle=False).interleave(
-        lambda x: tf.data.TFRecordDataset(x),
+        lambda x: tf.data.TFRecordDataset(x, compression_type="GZIP"),
         num_parallel_calls=tf.data.AUTOTUNE,
         cycle_length=tf.data.AUTOTUNE
     )
     ds = ds.map(lambda x: parse_data(x, purpose), num_parallel_calls=tf.data.AUTOTUNE)
     ds = ds.map(lambda *x: split_data(*x, purpose=purpose), num_parallel_calls=tf.data.AUTOTUNE)
-    
+    count = 0
     # ds = ds.cache()
-    
     ds = ds.batch(batch_size)
     ds = ds.prefetch(buffer_size=tf.data.AUTOTUNE)
+    
 
     return ds
 

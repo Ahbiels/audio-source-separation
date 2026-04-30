@@ -27,6 +27,7 @@ def get_args():
     parser.add_argument('--create-dataset', '-c', action='store_true', help='Execute and create TFRecords')
     parser.add_argument('--train', '-t', action='store_true', help='No train the model')
     parser.add_argument('--attempt', '-a', dest='attempt', type=int, default=1, help='training attempt number')
+    parser.add_argument('--load-model', '-l', dest='load_model', type=str, default="yes", help='You can choose if the model will loaded or not')
 
     return parser.parse_args()
 
@@ -34,7 +35,9 @@ def get_args():
 if __name__ == "__main__":
     args = get_args()
     model = UNet(in_channels=IN_CHANNELS, out_channels=OUT_CHANNELS).to(DEVICE)
-    load_checkpoint(f"{LOCATION_FILE_MODEL}_{args.attempt-1}{FORMAT_FILE_MODEL}", model)
+    
+    if args.load_model == "yes": # -l
+        load_checkpoint(f"{LOCATION_FILE_MODEL}_{args.attempt-1}{FORMAT_FILE_MODEL}", model)
     
     if args.create_dataset: # -c
         Get_dataset(AUDIO_LOCATION, NEW_RATE_SAMPLE)

@@ -41,7 +41,7 @@ def save_data(data, writer, type, new_rate_sample):
     tensors = {}
     chunks = {}
     phase = None
-    segment=2 #2 segundos cada chunk
+    segment=2 #5 segundos cada chunk
     
     for index, item in data.items():
         data_waveform, rate_of_sample = audio_to_waveform(item)
@@ -51,11 +51,18 @@ def save_data(data, writer, type, new_rate_sample):
     mix = tensors[0][None]
     chunk_len = int(rate_of_sample * segment)
     length = mix.shape[-1]
-    
     end = chunk_len
     start = 0
-    # Criar os chunks (sem fade)
+    threshold = 0.001 
     while start < length:
+        chunk_mix = mix[:, :, start:end]
+        
+        rms = torch.sqrt(torch.mean(chunk_mix**2))
+        if rms < threshold:
+            start += chunk_len
+            end = start + chunk_len
+            continue
+        
         for i, source in tensors.items():
             source_separated = source[None]
             chunk = source_separated[:, :, start:end]
@@ -115,5 +122,6 @@ def Get_dataset(dataset_path, new_rate_sample):
             data_shard = tf_type[shard:shard+1]
             for data in data_shard:
                 print(f"{shard+1} of {len(tf_type)} - {type}")
-                with tf.io.TFRecordWriter(output_filename) as writer:
+                options = tf.io.TFRecordOptions(compression_type="GZIP")
+                with tf.io.TFRecordWriter(output_filename, options=options) as writer:
                         save_data(data, writer, type, new_rate_sample)
