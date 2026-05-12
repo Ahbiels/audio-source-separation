@@ -24,6 +24,9 @@ def load_data_path(dataset_path):
         samples = []
         for track in os.listdir(subset_path):
             track_path = os.path.join(subset_path, track)
+            if track == ".ipynb_checkpoints":
+              continue
+            print(track_path)
             if not os.path.isdir(track_path):
                 continue
             paths = {
@@ -42,7 +45,7 @@ def save_data(data, writer, type, new_rate_sample):
     chunks = {}
     phase = None
     segment=2 #5 segundos cada chunk
-    
+
     for index, item in data.items():
         data_waveform, rate_of_sample = audio_to_waveform(item)
         data_waveform = downmix_to_mono(data_waveform)
@@ -53,38 +56,31 @@ def save_data(data, writer, type, new_rate_sample):
     length = mix.shape[-1]
     end = chunk_len
     start = 0
-    threshold = 0.001 
+    threshold = 0.001
     while start < length:
         chunk_mix = mix[:, :, start:end]
-        
+
         rms = torch.sqrt(torch.mean(chunk_mix**2))
         if rms < threshold:
             start += chunk_len
             end = start + chunk_len
             continue
-        
+
         for i, source in tensors.items():
-            source_separated = source[None]
+            source_separated = source[None]  # [1, C, T]
             chunk = source_separated[:, :, start:end]
-            
+
             if chunk.shape[-1] < chunk_len:
                 pad_size = chunk_len - chunk.shape[-1]
                 chunk = torch.nn.functional.pad(chunk, (0, pad_size))
-            
-            #O .squeeze() remove qualquer dimensão que seja tamanho 1  transformando (1, 1, 513, 622) em (513, 622)
-            if i == 0 and type == "test":
-                chunk_spectogram, phase = transform_spec.transform_in_spectogram(chunk)
-                phase = phase.to(torch.float32)
-                phase = phase.squeeze().to(torch.float32)
-                phase = tf.io.serialize_tensor(phase.numpy()).numpy()
-            else:
-                chunk_spectogram, _ = transform_spec.transform_in_spectogram(chunk)
-            chunk_spectogram = chunk_spectogram.to(torch.float32)
-            
-            chunk_spectogram = chunk_spectogram.squeeze().to(torch.float32)
-            chunks[i] = tf.io.serialize_tensor(chunk_spectogram.numpy()).numpy()
 
-        
+            chunk = chunk.squeeze(0)
+            chunk = chunk.to(torch.float32).cpu().numpy()
+            serialized_chunk = tf.io.serialize_tensor(chunk)
+
+            chunks[i] = serialized_chunk
+
+
         features = {
             "mix": _bytes_feature(chunks[0]),
             "vocals": _bytes_feature(chunks[1]),
@@ -92,13 +88,10 @@ def save_data(data, writer, type, new_rate_sample):
             "drums": _bytes_feature(chunks[3]),
             "others": _bytes_feature(chunks[4]),
         }
-        
-        if type == "test":
-            features["original_phase"] = _bytes_feature(phase)
-        
+
         row = tf.train.Example(features=tf.train.Features(feature=features))
         writer.write(row.SerializeToString())
-        
+
         start += chunk_len
         end = start + chunk_len
 
@@ -106,7 +99,7 @@ def Get_dataset(dataset_path, new_rate_sample):
     print("=> Create TFRecords")
     os.system('cls' if os.name == 'nt' else 'clear')
     tf_train, tf_test = load_data_path(dataset_path)
-    
+
     df = {
         "train": tf_train,
         "test": tf_test
@@ -116,7 +109,7 @@ def Get_dataset(dataset_path, new_rate_sample):
         PATH_DFRECORDS = f"./TFRecords/{type}"
         if not os.path.exists(PATH_DFRECORDS):
             os.makedirs(PATH_DFRECORDS)
-        
+
         for shard in range(len(tf_type)):
             output_filename = os.path.join(PATH_DFRECORDS,'{}_{:03d}-of-{:03d}.tfrecord'.format("audios_sources", shard+1, len(tf_type)))
             data_shard = tf_type[shard:shard+1]
